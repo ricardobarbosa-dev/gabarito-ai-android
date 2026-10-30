@@ -146,6 +146,16 @@ public class ScreenCaptureService {
             try {
                 image = reader.acquireLatestImage();
                 if (image == null) {
+                    image = reader.acquireNextImage();
+                }
+                if (image == null) {
+                    try {
+                        Thread.sleep(150);
+                        image = reader.acquireLatestImage();
+                        if (image == null) image = reader.acquireNextImage();
+                    } catch (InterruptedException ignored) {}
+                }
+                if (image == null) {
                     postError(callback, "Não foi possível obter os pixels da tela.");
                     return;
                 }

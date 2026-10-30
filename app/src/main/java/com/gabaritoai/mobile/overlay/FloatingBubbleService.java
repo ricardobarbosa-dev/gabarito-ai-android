@@ -95,14 +95,28 @@ public class FloatingBubbleService extends Service {
         // Initialize MediaProjection if extras are passed
         if (intent.hasExtra(EXTRA_RESULT_CODE) && intent.hasExtra(EXTRA_DATA_INTENT)) {
             int resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
-            Intent data = intent.getParcelableExtra(EXTRA_DATA_INTENT);
-            captureService.initMediaProjection(resultCode, data);
+            Intent data;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                data = intent.getParcelableExtra(EXTRA_DATA_INTENT, Intent.class);
+            } else {
+                data = intent.getParcelableExtra(EXTRA_DATA_INTENT);
+            }
+            if (data != null) {
+                captureService.initMediaProjection(resultCode, data);
+            }
         }
 
-        // Create and show bubble
-        if (!isBubbleAttached) {
-            setupBubbleView();
+        // Clean up any lingering old bubble view to guarantee only 1 bubble is on screen
+        if (bubbleView != null) {
+            try {
+                windowManager.removeView(bubbleView);
+            } catch (Exception ignored) {}
+            bubbleView = null;
+            isBubbleAttached = false;
         }
+
+        // Create and show single clean bubble
+        setupBubbleView();
 
         return START_STICKY;
     }
@@ -179,7 +193,8 @@ public class FloatingBubbleService extends Service {
             private int initialY;
             private float initialTouchX;
             private float initialTouchY;
-            private long touchStartTime;
+            private boolean isDragging = false;
+            private static final int DRAG_THRESHOLD = 30; // 30px threshold to separate click from drag
 
             @Override
             public boolean onTouch(View v, MotionEvent event) {
@@ -189,27 +204,27 @@ public class FloatingBubbleService extends Service {
                         initialY = bubbleParams.y;
                         initialTouchX = event.getRawX();
                         initialTouchY = event.getRawY();
-                        touchStartTime = System.currentTimeMillis();
+                        isDragging = false;
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
-                        bubbleParams.x = initialX + (int) (event.getRawX() - initialTouchX);
-                        bubbleParams.y = initialY + (int) (event.getRawY() - initialTouchY);
-                        if (isBubbleAttached) {
-                            windowManager.updateViewLayout(bubbleView, bubbleParams);
+                        float deltaX = Math.abs(event.getRawX() - initialTouchX);
+                        float deltaY = Math.abs(event.getRawY() - initialTouchY);
+                        if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+                            isDragging = true;
+                            bubbleParams.x = initialX + (int) (event.getRawX() - initialTouchX);
+                            bubbleParams.y = initialY + (int) (event.getRawY() - initialTouchY);
+                            if (isBubbleAttached) {
+                                windowManager.updateViewLayout(bubbleView, bubbleParams);
+                            }
                         }
                         return true;
 
                     case MotionEvent.ACTION_UP:
-                        long duration = System.currentTimeMillis() - touchStartTime;
-                        float diffX = Math.abs(event.getRawX() - initialTouchX);
-                        float diffY = Math.abs(event.getRawY() - initialTouchY);
-
-                        if (duration < 300 && diffX < 15 && diffY < 15) {
-                            // Single Tap Detected
+                        if (!isDragging) {
+                            // 100% Reliable Tap Detection!
                             onBubbleClicked();
                         } else {
-                            // Snap to edge
                             snapBubbleToEdge();
                         }
                         return true;
@@ -248,16 +263,22 @@ public class FloatingBubbleService extends Service {
 
     private void onBubbleClicked() {
         try {
-            if (isSolving) return;
+            if (isSolving) {
+                Toast.makeText(this, "⏳ Analisando questão... aguarde um instante.", Toast.LENGTH_SHORT).show();
+                return;
+            }
 
             String apiKey = prefs.getApiKey();
             if (apiKey.isEmpty()) {
-                Toast.makeText(this, "Por favor, configure sua chave do Gemini no app!", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "⚠️ Por favor, configure sua chave do Gemini no app GabaritoAI!", Toast.LENGTH_LONG).show();
                 return;
             }
 
             triggerVibration();
             dismissResultCard();
+
+            // Immediate visual feedback so user knows tap was registered!
+            Toast.makeText(this, "🔍 GabaritoAI: Lendo questão na tela...", Toast.LENGTH_SHORT).show();
 
             isSolving = true;
             setBubbleLoading(true);
@@ -346,6 +367,9 @@ public class FloatingBubbleService extends Service {
 
     private void showResultCard(QuestionResult result) {
         dismissResultCard();
+
+        // Always show Toast with answer immediately so user never misses it!
+        Toast.makeText(this, "🎯 GABARITO: [ " + result.getCorrectLetter() + " ]\n" + result.getReasoning(), Toast.LENGTH_LONG).show();
 
         resultCardView = LayoutInflater.from(this).inflate(R.layout.layout_result_card, null);
 

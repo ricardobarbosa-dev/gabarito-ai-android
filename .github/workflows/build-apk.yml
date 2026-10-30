@@ -7,6 +7,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build & Package Android APK
@@ -51,13 +54,39 @@ jobs:
             gradle assembleDebug --stacktrace
           fi
 
-      - name: Verify APK Generation
+      - name: Prepare APK File for Distribution
         run: |
-          find . -name "*.apk" -type f
+          # Locate built APK and copy to root as GabaritoAI.apk
+          APK_PATH=$(find . -name "app-debug.apk" -type f | head -n 1)
+          if [ -n "$APK_PATH" ]; then
+            cp "$APK_PATH" ./GabaritoAI.apk
+            echo "GabaritoAI.apk prepared at root. Size: $(ls -lh ./GabaritoAI.apk | awk '{print $5}')"
+          else
+            echo "Error: app-debug.apk not found!"
+            exit 1
+          fi
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: GabaritoAI-Debug-APK
-          path: '**/app/build/outputs/apk/debug/app-debug.apk'
+          path: GabaritoAI.apk
           if-no-files-found: error
+
+      - name: Publish Direct APK Release
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v1
+        continue-on-error: true
+        with:
+          tag_name: v1.0.0
+          name: GabaritoAI Mobile v1.0.0 (APK Direto)
+          body: |
+            ### 📱 GabaritoAI Mobile - Download Direto do APK
+            Toque no link **GabaritoAI.apk** abaixo para baixar e instalar diretamente sem precisar descompactar zip!
+            
+            **Dica de Instalação no Android / Xiaomi:**
+            - Se aparecer aviso do Play Protect: toque em **"Mais detalhes"** > **"Instalar assim mesmo"**.
+            - Permita instalação de fontes desconhecidas para o seu navegador ou gerenciador de arquivos.
+          files: GabaritoAI.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

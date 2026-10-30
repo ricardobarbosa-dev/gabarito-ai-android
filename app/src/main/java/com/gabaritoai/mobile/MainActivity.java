@@ -46,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
     private SwitchMaterial swShowExplanation;
     private SwitchMaterial swStealthMode;
     private Button btnOpenAccessibility;
+    private Button btnXiaomiPermissions;
 
     private boolean isServiceRunning = false;
     private ActivityResultLauncher<Intent> mediaProjectionLauncher;
@@ -78,6 +79,12 @@ public class MainActivity extends AppCompatActivity {
         swShowExplanation = findViewById(R.id.sw_show_explanation);
         swStealthMode = findViewById(R.id.sw_stealth_mode);
         btnOpenAccessibility = findViewById(R.id.btn_open_accessibility);
+        btnXiaomiPermissions = findViewById(R.id.btn_xiaomi_permissions);
+
+        if (isXiaomiDevice()) {
+            btnXiaomiPermissions.setVisibility(View.VISIBLE);
+            btnXiaomiPermissions.setOnClickListener(v -> openXiaomiPermissions());
+        }
     }
 
     private void setupModelSpinner() {
@@ -273,9 +280,28 @@ public class MainActivity extends AppCompatActivity {
         tvServiceStatus.setTextColor(getColor(R.color.primary));
 
         Toast.makeText(this, "Bolha GabaritoAI ativada na tela!", Toast.LENGTH_SHORT).show();
+    }
 
-        // Send app to background so user is ready to open Estácio
-        moveTaskToBack(true);
+    private boolean isXiaomiDevice() {
+        String m = Build.MANUFACTURER != null ? Build.MANUFACTURER.toLowerCase() : "";
+        String b = Build.BRAND != null ? Build.BRAND.toLowerCase() : "";
+        return m.contains("xiaomi") || m.contains("redmi") || m.contains("poco") ||
+                b.contains("xiaomi") || b.contains("redmi") || b.contains("poco");
+    }
+
+    private void openXiaomiPermissions() {
+        try {
+            Intent intent = new Intent("miui.intent.action.APP_PERM_EDITOR");
+            intent.setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity");
+            intent.putExtra("extra_pkgname", getPackageName());
+            startActivity(intent);
+        } catch (Exception e) {
+            try {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Exception ignored) {}
+        }
     }
 
     private void stopFloatingBubbleService() {

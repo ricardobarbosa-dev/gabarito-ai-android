@@ -117,19 +117,22 @@ public class FloatingBubbleService extends Service {
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.floating_service_notification_title))
                 .setContentText(getString(R.string.floating_service_notification_text))
-                .setSmallIcon(R.drawable.ic_bubble_gemini)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentIntent(pendingIntent)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
             } else {
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+                startForeground(NOTIFICATION_ID, notification);
             }
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
+        } catch (Exception e) {
+            Log.e(TAG, "Aviso ao iniciar foreground com mediaProjection: " + e.getMessage());
+            try {
+                startForeground(NOTIFICATION_ID, notification);
+            } catch (Exception ignored) {}
         }
     }
 
@@ -155,17 +158,21 @@ public class FloatingBubbleService extends Service {
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
 
+        int bubbleSize = (int) (64 * getResources().getDisplayMetrics().density);
+
         bubbleParams = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                bubbleSize,
+                bubbleSize,
                 layoutType,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN |
+                        WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
                 PixelFormat.TRANSLUCENT
         );
 
         bubbleParams.gravity = Gravity.TOP | Gravity.START;
         bubbleParams.x = 20;
-        bubbleParams.y = 300;
+        bubbleParams.y = 350;
 
         bubbleView.setOnTouchListener(new View.OnTouchListener() {
             private int initialX;
@@ -214,8 +221,12 @@ public class FloatingBubbleService extends Service {
         try {
             windowManager.addView(bubbleView, bubbleParams);
             isBubbleAttached = true;
+            Log.i(TAG, "Bolha adicionada com sucesso ao WindowManager!");
         } catch (Exception e) {
             Log.e(TAG, "Falha ao adicionar bubbleView no WindowManager", e);
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                Toast.makeText(getApplicationContext(), "Erro ao exibir bolha: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            });
         }
     }
 
@@ -236,65 +247,91 @@ public class FloatingBubbleService extends Service {
     }
 
     private void onBubbleClicked() {
-        if (isSolving) return;
+        try {
+            if (isSolving) return;
 
-        String apiKey = prefs.getApiKey();
-        if (apiKey.isEmpty()) {
-            Toast.makeText(this, "Por favor, configure sua chave do Gemini no app!", Toast.LENGTH_LONG).show();
-            return;
-        }
+            String apiKey = prefs.getApiKey();
+            if (apiKey.isEmpty()) {
+                Toast.makeText(this, "Por favor, configure sua chave do Gemini no app!", Toast.LENGTH_LONG).show();
+                return;
+            }
 
-        triggerVibration();
-        dismissResultCard();
+            triggerVibration();
+            dismissResultCard();
 
-        isSolving = true;
-        setBubbleLoading(true);
+            isSolving = true;
+            setBubbleLoading(true);
 
-        // Hide bubble temporarily so it doesn't get captured in screenshot
-        bubbleView.setVisibility(View.INVISIBLE);
+            // Hide bubble temporarily so it doesn't get captured in screenshot
+            bubbleView.setVisibility(View.INVISIBLE);
 
-        // Take screen capture
-        bubbleView.postDelayed(() -> {
-            captureService.captureScreen(new ScreenCaptureService.CaptureCallback() {
-                @Override
-                public void onCaptured(Bitmap bitmap, String base64Jpeg) {
-                    // Restore bubble visibility with spinner active
-                    bubbleView.setVisibility(View.VISIBLE);
-
-                    // Send to Gemini Vision
-                    String model = prefs.getSelectedModel();
-                    visionClient.solveQuestionFromScreenshot(apiKey, model, base64Jpeg, new SolverCallback() {
+            // Take screen capture
+            bubbleView.postDelayed(() -> {
+                try {
+                    captureService.captureScreen(new ScreenCaptureService.CaptureCallback() {
                         @Override
-                        public void onSuccess(QuestionResult result) {
-                            isSolving = false;
-                            setBubbleLoading(false);
-                            triggerVibration();
-                            showResultCard(result);
+                        public void onCaptured(Bitmap bitmap, String base64Jpeg) {
+                            try {
+                                // Restore bubble visibility with spinner active
+                                bubbleView.setVisibility(View.VISIBLE);
 
-                            // Optional auto-click via Accessibility
-                            if (prefs.isAutoClickEnabled()) {
-                                AutoClickAccessibilityService.clickOption(result.getCorrectLetter());
+                                // Send to Gemini Vision
+                                String model = prefs.getSelectedModel();
+                                visionClient.solveQuestionFromScreenshot(apiKey, model, base64Jpeg, new SolverCallback() {
+                                    @Override
+                                    public void onSuccess(QuestionResult result) {
+                                        try {
+                                            isSolving = false;
+                                            setBubbleLoading(false);
+                                            triggerVibration();
+                                            showResultCard(result);
+
+                                            // Optional auto-click via Accessibility
+                                            if (prefs.isAutoClickEnabled()) {
+                                                AutoClickAccessibilityService.clickOption(result.getCorrectLetter());
+                                            }
+                                        } catch (Throwable t) {
+                                            Log.e(TAG, "Erro no onSuccess do Gemini", t);
+                                        }
+                                    }
+
+                                    @Override
+                                    public void onError(String errorMessage) {
+                                        isSolving = false;
+                                        setBubbleLoading(false);
+                                        Toast.makeText(FloatingBubbleService.this, errorMessage, Toast.LENGTH_LONG).show();
+                                    }
+                                });
+                            } catch (Throwable t) {
+                                Log.e(TAG, "Erro no onCaptured", t);
+                                isSolving = false;
+                                setBubbleLoading(false);
+                                bubbleView.setVisibility(View.VISIBLE);
                             }
                         }
 
                         @Override
-                        public void onError(String errorMessage) {
+                        public void onError(String error) {
                             isSolving = false;
+                            bubbleView.setVisibility(View.VISIBLE);
                             setBubbleLoading(false);
-                            Toast.makeText(FloatingBubbleService.this, errorMessage, Toast.LENGTH_LONG).show();
+                            Toast.makeText(FloatingBubbleService.this, error, Toast.LENGTH_SHORT).show();
                         }
                     });
-                }
-
-                @Override
-                public void onError(String error) {
+                } catch (Throwable t) {
+                    Log.e(TAG, "Erro ao disparar captura", t);
                     isSolving = false;
                     bubbleView.setVisibility(View.VISIBLE);
                     setBubbleLoading(false);
-                    Toast.makeText(FloatingBubbleService.this, error, Toast.LENGTH_SHORT).show();
+                    Toast.makeText(FloatingBubbleService.this, "Erro ao capturar tela: " + t.getMessage(), Toast.LENGTH_SHORT).show();
                 }
-            });
-        }, 150);
+            }, 150);
+        } catch (Throwable t) {
+            Log.e(TAG, "Erro crítico no onBubbleClicked", t);
+            isSolving = false;
+            setBubbleLoading(false);
+            if (bubbleView != null) bubbleView.setVisibility(View.VISIBLE);
+        }
     }
 
     private void setBubbleLoading(boolean loading) {
@@ -359,6 +396,8 @@ public class FloatingBubbleService extends Service {
             isResultCardAttached = true;
         } catch (Exception e) {
             Log.e(TAG, "Falha ao exibir resultCardView", e);
+            // Fallback Toast if secondary window overlay is blocked by OEM
+            Toast.makeText(this, "🎯 GABARITO: [ " + result.getCorrectLetter() + " ]\n" + result.getReasoning(), Toast.LENGTH_LONG).show();
         }
     }
 

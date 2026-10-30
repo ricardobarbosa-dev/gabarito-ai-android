@@ -117,6 +117,20 @@
                     android:text="Serviço desativado no momento"
                     android:textColor="@color/text_muted"
                     android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btn_xiaomi_permissions"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:strokeColor="@color/warning"
+                    android:text="⚙️ Xiaomi / POCO: Ativar Janelas Pop-up (Clique aqui)"
+                    android:textAllCaps="false"
+                    android:textColor="@color/warning"
+                    android:textSize="12sp"
+                    android:visibility="gone"
+                    app:cornerRadius="10dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

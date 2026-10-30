@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">GabaritoAI</string>
+    <string name="app_subtitle">Assistente Acadêmico Inteligente com Visão Multimodal</string>
+    <string name="floating_service_notification_title">GabaritoAI Ativo</string>
+    <string name="floating_service_notification_text">Bolha flutuante pronta. Abra sua prova e toque na bolha.</string>
+    <string name="accessibility_service_description">Permite ao GabaritoAI ler as opções da questão na tela e marcar a alternativa correta automaticamente nos apps suportados.</string>
+</resources>
